@@ -5289,6 +5289,13 @@ class Panel {
             { key: "E", modifier: true, context: Shortcuts.SHORTCUT_PRIORITY.Always },
             () => display_port_pane("export", "tikz-cd"),
         );
+        const export_to_typst = Panel.create_button_with_shortcut(
+            ui,
+            "Typst",
+            "Typst",
+            { key: "T", modifier: true, context: Shortcuts.SHORTCUT_PRIORITY.Always },
+            () => display_port_pane("export", "fletcher"),
+        );
 
         this.global = new DOM.Div({ class: "panel global" }).add(
             new DOM.Element("label").add("Import: ")
@@ -5306,7 +5313,7 @@ class Panel {
               .listen("click", () => {
                   display_port_pane("export", "html");
               })
-        ).add(export_to_latex).add(
+        ).add(export_to_latex).add(export_to_typst).add(
             new DOM.Div({ class: "indicator-container" }).add(
                 new DOM.Element("label").add("Macros: ")
                     .add(
