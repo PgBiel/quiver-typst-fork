@@ -3267,7 +3267,7 @@ class UI {
 
         // Rerender all the existing labels with the new macro definitions.
         for (const cell of this.quiver.all_cells()) {
-            this.panel.render_tex(this, cell);
+            this.panel.render_maths(this, cell);
         }
 
         // Update the LaTeX colour palette group.
@@ -3335,7 +3335,7 @@ class UI {
 
             // Rerender all the existing labels without the new macro definitions.
             for (const cell of this.quiver.all_cells()) {
-                this.panel.render_tex(this, cell);
+                this.panel.render_maths(this, cell);
             }
 
             // Update the LaTeX colour palette group.
@@ -3534,7 +3534,7 @@ class History {
                 case "label":
                     for (const label of action.labels) {
                         label.cell.label = label[to];
-                        ui.panel.render_tex(ui, label.cell);
+                        ui.panel.render_maths(ui, label.cell);
                     }
                     break;
                 case "label_colour":
@@ -5535,7 +5535,7 @@ class Panel {
     }
 
     /// Render the TeX contained in the label of a cell.
-    render_tex(ui, cell) {
+    render_maths(ui, cell) {
         const label = cell.element.query_selector(".label");
         if (label === null) {
             // The label will be null if the edge is invalid, which may happen when bad tikz-cd has
@@ -5543,7 +5543,7 @@ class Panel {
             return;
         }
 
-        const update_label_transformation = () => {
+        const update_label_transformation = (mode = "katex") => {
             if (cell.is_edge()) {
                 // Resize the bounding box for the label.
                 // In Firefox, the bounding rectangle for the KaTeX element seems to be sporadically
@@ -5577,6 +5577,24 @@ class Panel {
             }
         };
 
+
+        TypstQueue.render(`$${cell.label}$`).then(svg => {
+            if (svg.match(/^.svg/)) {
+                label.element.innerHTML = svg;
+                // Restore bounding box
+                const svg_dom = label.element.children[0];
+                const bbox = svg_dom.getBBox();
+                const viewBox = [bbox.x, bbox.y, bbox.width, bbox.height].join(" ");
+                svg_dom.setAttribute("viewBox", viewBox);
+                svg_dom.setAttribute("width", bbox.width);
+                svg_dom.setAttribute("height", bbox.height);
+            } else {
+                label.element.innerHTML = cell.label;
+            }
+            update_label_transformation("typst");
+        });
+
+        return; // TODO: remove this
         // Render the label with KaTeX.
         // Currently all errors are disabled, so we don't wrap this in a try-catch block.
         KaTeX.then((katex) => {
@@ -7434,7 +7452,7 @@ export class Vertex extends Cell {
         }
 
         // Resize the content according to the grid cell. This is just the default size: it will be
-        // updated by `render_tex`.
+        // updated by `render_maths`.
         this.content_element.set_style({
             width: `${ui.default_cell_size / 2}px`,
             height: `${ui.default_cell_size / 2}px`,
@@ -7443,7 +7461,7 @@ export class Vertex extends Cell {
         });
 
         if (construct) {
-            ui.panel.render_tex(ui, this);
+            ui.panel.render_maths(ui, this);
         } else {
             // The vertex may have moved, in which case we need to update the size of the grid cell
             // in which the vertex now lives, as the grid cell may now need to be resized.
@@ -7592,11 +7610,11 @@ export class Edge extends Cell {
             }
         }
 
-        ui.panel.render_tex(ui, this);
+        ui.panel.render_maths(ui, this);
     }
 
     /// Create the HTML element associated with the edge.
-    /// Note that `render_tex` triggers redrawing the edge, rather than the other way around.
+    /// Note that `render_maths` triggers redrawing the edge, rather than the other way around.
     render(ui, pointer_offset = null) {
         if (pointer_offset !== null) {
             const end = ui.mode.reconnect.end;
@@ -7765,6 +7783,36 @@ export class Edge extends Cell {
 
 // A `Promise` that returns the `katex` global object when it's loaded.
 let KaTeX = null;
+let Typst = null;
+
+class PromiseQueue {
+  constructor() {
+    this.queue = Promise.resolve(); // Start with a resolved promise
+  }
+
+  enqueue(promiseFunction) {
+    // Chain the new promise onto the existing queue
+    this.queue = this.queue.then(() => promiseFunction()).catch((error) => {
+      // Handle the error inside the queue to avoid unhandled promise rejections
+      console.error("Error executing promise:", error);
+    });
+
+    // Return the current queue state
+    return this.queue;
+  }
+}
+
+// TODO: add this to the big constants object
+const TYPST_PREAMBLE = "#set page(width: auto, height: auto, margin: 0em)\n#set text(28pt)\n";
+const TypstQueue = new class extends PromiseQueue {
+    render(text, template = (t) => `${TYPST_PREAMBLE}${t}`) {
+        return this.enqueue(() => new Promise(resolve => Typst.then(typst => {
+            typst.svg({mainContent: template(text)}).then(svg => resolve(svg)).catch(err => resolve(err));
+        })));
+    }
+};
+
+window.TypstQueue = TypstQueue
 
 // We want until the (minimal) DOM content has loaded, so we have access to `document.body`.
 document.addEventListener("DOMContentLoaded", () => {
@@ -7850,7 +7898,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // Immediately load the KaTeX library.
-   const rendering_library = new DOM.Element("script", {
+   const katex_script_dom = new DOM.Element("script", {
         type: "text/javascript",
         src: "KaTeX/katex.min.js",
     }).listen("error", () => {
@@ -7860,13 +7908,35 @@ document.addEventListener("DOMContentLoaded", () => {
         ui.element.query_selector(".loading-screen").class_list.add("hidden");
     });
 
+   const typstts_script_dom = new DOM.Element("script", {
+        type: "module",
+        src: "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js",
+    }).listen("error", () => {
+        // Handle Typst.ts not loading (somewhat) gracefully.
+        UI.display_error("Typst failed to load.");
+    });
+
     KaTeX = new Promise((accept) => {
-        rendering_library.listen("load", () => {
+        katex_script_dom.listen("load", () => {
             accept(katex);
             // KaTeX is fast enough to be worth waiting for, but not
             // immediately available. In this case, we delay loading
             // the quiver until the library has loaded.
             load_quiver_from_query_string();
+        });
+    });
+
+    // Unlike KaTeX, this is on the heavier side of things. We don't wait for it.
+    // TODO: lazy loading of this library
+    Typst = new Promise((accept) => {
+        typstts_script_dom.listen("load", () => {
+            $typst.setCompilerInitOptions({
+                getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm',
+            });
+            $typst.setRendererInitOptions({
+                getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm',
+            });
+            accept($typst);
         });
     });
 
@@ -7876,8 +7946,9 @@ document.addEventListener("DOMContentLoaded", () => {
         href: "KaTeX/katex.css",
     }).element);
 
-    // Trigger the script load.
-    document.head.appendChild(rendering_library.element);
+    // Load KaTeX and Typst.ts
+    document.head.appendChild(katex_script_dom.element);
+    document.head.appendChild(typstts_script_dom.element);
 
     // Prevent clicking on the logo from having any effect other than opening the link.
     body.query_selector("#logo-link").listen("pointerdown", (event) => {
@@ -7890,3 +7961,5 @@ document.addEventListener("DOMContentLoaded", () => {
         load_quiver_from_query_string();
     });
 });
+
+// vim: set ts=4 sw=4:
