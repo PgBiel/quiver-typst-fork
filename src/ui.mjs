@@ -5549,18 +5549,30 @@ class Panel {
                 // In Firefox, the bounding rectangle for the KaTeX element seems to be sporadically
                 // available, unless we render the arrow *beforehand*.
                 cell.render(ui);
-                const katex_element = label.query_selector(".katex, .katex-error");
-                const [width, height] = [
-                    katex_element.element.offsetWidth, katex_element.element.offsetHeight
-                ];
-                // The bounding rect is the size on-screen, which will hence be smaller if we are
-                // zoomed out (and conversely if we are zoomed in). We therefore have to adjust the
-                // dimensions (inversely) by the scaling factor.
-                const scale = 2 ** -ui.scale;
-                cell.arrow.label.size = new Dimensions(
-                    width * scale + (width > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
-                    height * scale + (height > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
-                );
+                if (mode === "katex") {
+                    const katex_element = label.query_selector(".katex, .katex-error");
+                    const [width, height] = [
+                        katex_element.element.offsetWidth, katex_element.element.offsetHeight
+                    ];
+                    // The bounding rect is the size on-screen, which will hence be smaller if we are
+                    // zoomed out (and conversely if we are zoomed in). We therefore have to adjust the
+                    // dimensions (inversely) by the scaling factor.
+                    const scale = 2 ** -ui.scale;
+                    cell.arrow.label.size = new Dimensions(
+                        width * scale + (width > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
+                        height * scale + (height > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
+                    );
+                } else if (mode === "typst") {
+                    const typst_svg = label.query_selector("svg.typst-doc");
+                    const [width, height] = [
+                        +typst_svg.element.getAttribute('width'), +typst_svg.element.getAttribute('height')
+                    ];
+                    const scale = 2 ** -ui.scale;
+                    cell.arrow.label.size = new Dimensions(
+                        width * scale + (width > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
+                        height * scale + (height > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
+                    );
+                }
                 // Rerender the edge with the new label.
                 cell.render(ui);
             } else {
@@ -5578,6 +5590,7 @@ class Panel {
         };
 
 
+        // if (cell.is_edge()) return;
         TypstQueue.render(`$${cell.label}$`).then(svg => {
             if (svg.match(/^.svg/)) {
                 label.element.innerHTML = svg;
