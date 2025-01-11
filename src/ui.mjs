@@ -5549,30 +5549,28 @@ class Panel {
                 // In Firefox, the bounding rectangle for the KaTeX element seems to be sporadically
                 // available, unless we render the arrow *beforehand*.
                 cell.render(ui);
+                let width = 0;
+                let height = 0;
                 if (mode === "katex") {
                     const katex_element = label.query_selector(".katex, .katex-error");
-                    const [width, height] = [
+                    [width, height] = [
                         katex_element.element.offsetWidth, katex_element.element.offsetHeight
                     ];
-                    // The bounding rect is the size on-screen, which will hence be smaller if we are
-                    // zoomed out (and conversely if we are zoomed in). We therefore have to adjust the
-                    // dimensions (inversely) by the scaling factor.
-                    const scale = 2 ** -ui.scale;
-                    cell.arrow.label.size = new Dimensions(
-                        width * scale + (width > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
-                        height * scale + (height > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
-                    );
                 } else if (mode === "typst") {
                     const typst_svg = label.query_selector("svg.typst-doc");
-                    const [width, height] = [
+                    // Previously when rendering, we explicitely set the width and height attribute on the svg
+                    [width, height] = [
                         +typst_svg.element.getAttribute('width'), +typst_svg.element.getAttribute('height')
                     ];
-                    const scale = 2 ** -ui.scale;
-                    cell.arrow.label.size = new Dimensions(
-                        width * scale + (width > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
-                        height * scale + (height > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
-                    );
                 }
+                // The bounding rect is the size on-screen, which will hence be smaller if we are
+                // zoomed out (and conversely if we are zoomed in). We therefore have to adjust the
+                // dimensions (inversely) by the scaling factor.
+                const scale = 2 ** -ui.scale;
+                cell.arrow.label.size = new Dimensions(
+                    width * scale + (width > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
+                    height * scale + (height > 0 ? CONSTANTS.EDGE_LABEL_PADDING * 2 : 0),
+                );
                 // Rerender the edge with the new label.
                 cell.render(ui);
             } else {
@@ -5589,47 +5587,49 @@ class Panel {
             }
         };
 
-
-        // if (cell.is_edge()) return;
-        TypstQueue.render(`$${cell.label}$`).then(svg => {
-            if (svg.match(/^.svg/)) {
-                label.element.innerHTML = svg;
-                // Restore bounding box
-                const svg_dom = label.element.children[0];
-                const bbox = svg_dom.getBBox();
-                const viewBox = [bbox.x, bbox.y, bbox.width, bbox.height].join(" ");
-                svg_dom.setAttribute("viewBox", viewBox);
-                svg_dom.setAttribute("width", bbox.width);
-                svg_dom.setAttribute("height", bbox.height);
-            } else {
-                label.element.innerHTML = cell.label;
-            }
-            update_label_transformation("typst");
-        });
-
-        return; // TODO: remove this
-        // Render the label with KaTeX.
-        // Currently all errors are disabled, so we don't wrap this in a try-catch block.
-        KaTeX.then((katex) => {
-            katex.render(
-                cell.label.replace(/\$/g, "\\$"),
-                label.element,
-                {
-                    throwOnError: false,
-                    errorColor: "hsl(0, 100%, 40%)",
-                    macros: ui.latex_macros(),
-                    trust: (context) => ["\\href", "\\url", "\\includegraphics"]
-                        .includes(context.command),
-                },
-            );
-            // KaTeX loads fonts as it needs them. After we call `render`, it will load the fonts it
-            // needs if they haven't already been loaded, then render the LaTeX asynchronously. If
-            // we calculate the label size immediately and the necessary fonts have not been loaded,
-            // the calculated dimensions will be incorrect. Therefore, we need to wait until all
-            // the fonts used in the document (i.e. the KaTeX-specific ones, which are the only
-            // ones that may not have been loaded yet) have been loaded.
-            document.fonts.ready.then(update_label_transformation);
-        });
+        const rendering = "typst";
+        if (rendering === "typst") {
+            TypstQueue.render(`$${cell.label}$`).then(svg => {
+                // If we indeed got an svg and not an error
+                if (svg.match(/^.svg/)) {
+                    label.element.innerHTML = svg;
+                    // Restore bounding box
+                    const svg_dom = label.element.children[0];
+                    const bbox = svg_dom.getBBox();
+                    const viewBox = [bbox.x, bbox.y, bbox.width, bbox.height].join(" ");
+                    svg_dom.setAttribute("viewBox", viewBox);
+                    svg_dom.setAttribute("width", bbox.width);
+                    svg_dom.setAttribute("height", bbox.height);
+                } else {
+                    // the result was an error, display the text unrendered.
+                    label.element.innerHTML = cell.label;
+                }
+                update_label_transformation("typst");
+            });
+        } else {
+            // Render the label with KaTeX.
+            // Currently all errors are disabled, so we don't wrap this in a try-catch block.
+            KaTeX.then((katex) => {
+                katex.render(
+                    cell.label.replace(/\$/g, "\\$"),
+                    label.element,
+                    {
+                        throwOnError: false,
+                        errorColor: "hsl(0, 100%, 40%)",
+                        macros: ui.latex_macros(),
+                        trust: (context) => ["\\href", "\\url", "\\includegraphics"]
+                            .includes(context.command),
+                    },
+                );
+                // KaTeX loads fonts as it needs them. After we call `render`, it will load the fonts it
+                // needs if they haven't already been loaded, then render the LaTeX asynchronously. If
+                // we calculate the label size immediately and the necessary fonts have not been loaded,
+                // the calculated dimensions will be incorrect. Therefore, we need to wait until all
+                // the fonts used in the document (i.e. the KaTeX-specific ones, which are the only
+                // ones that may not have been loaded yet) have been loaded.
+                document.fonts.ready.then(() => update_label_transformation());
+            });
+        }
     };
 
     /// Update the panel state (i.e. enable/disable fields as relevant).
