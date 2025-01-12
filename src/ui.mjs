@@ -49,6 +49,10 @@ Object.assign(CONSTANTS, {
     /// Minimum and maximum zoom levels.
     MIN_ZOOM: -2.5,
     MAX_ZOOM: 1,
+    // Default rendering engine: KaTeX. Typst ("typst") is currently the only other possible value.
+    DEFAULT_RENDERING_ENGINE: "katex",
+    // Preamble used to render the typst labels
+    TYPST_PREAMBLE: "#set page(width: auto, height: auto, margin: 0em)\n#set text(font: \"New Computer Modern\", 32pt)\n",
 });
 
 /// Various states for the UI (e.g. whether cells are being rearranged, or connected, etc.).
@@ -1382,7 +1386,7 @@ class UI {
         // A helper function for creating a new vertex, as there are
         // several actions that can trigger the creation of a vertex.
         const create_vertex = (position) => {
-            const label = "\\bullet";
+            const label = this.settings.get("quiver.renderer") === "typst" ? "bullet" : "\\bullet";
             return new Vertex(this, label, position);
         };
 
@@ -3542,6 +3546,7 @@ class History {
                         label_colour.cell.label_colour = label_colour[to];
                         label_colour.cell.element.query_selector(".label").set_style({
                             color: label_colour.cell.label_colour.css(),
+                            fill: label_colour.cell.label_colour.css(),
                         });
                     }
                     update_panel = true;
@@ -3772,6 +3777,8 @@ class Settings {
             "export.embed.height": CONSTANTS.DEFAULT_EMBED_SIZE.HEIGHT,
             // Which variant of the corner to use for pullbacks/pushouts.
             "diagram.var_corner": false,
+            // Use KaTeX or Typst rendering ?
+            "quiver.renderer": CONSTANTS.DEFAULT_RENDERING_ENGINE,
         };
         try {
             // Try to update the default values with the saved settings.
@@ -5587,12 +5594,20 @@ class Panel {
             }
         };
 
-        const rendering = "typst";
-        if (rendering === "typst") {
-            TypstQueue.render(`$${cell.label}$`).then(svg => {
-                // If we indeed got an svg and not an error
-                if (svg.match(/^.svg/)) {
-                    label.element.innerHTML = svg;
+        if (ui.settings.get("quiver.renderer") === "typst") {
+            // Render the label with typst
+            TypstQueue.render(`$${cell.label}$`).then(result => {
+                const template = document.createElement('template');
+                template.innerHTML = result;
+                // If we got an svg and not an error
+                if (template.content.firstChild.nodeName === "svg") {
+                    const svg = template.content.firstChild;
+                    // Remove extraneous style, html text, and script, which are all generated to support
+                    // text selection in the svg (which we are not interested in)
+                    svg.querySelectorAll('script, style, foreignObject').forEach(node => node.remove())
+                    // Remove the fill attribute which prevents recolouring of the svg after the fact
+                    svg.querySelectorAll('.typst-text').forEach(node => node.removeAttribute('fill'))
+                    label.element.replaceChildren(svg);
                     // Restore bounding box
                     const svg_dom = label.element.children[0];
                     const bbox = svg_dom.getBBox();
@@ -6667,6 +6682,32 @@ class Toolbar {
         );
 
         add_action(
+            "Renderer",
+            // Same hack as with the Reset zoom button to display text below the icon
+            [{key: ui.settings.get("quiver.renderer") === "katex" ? "KaTeX" : "Typst"}],
+            () => {
+                const current_renderer = ui.settings.get("quiver.renderer")
+                const new_renderer = current_renderer === "katex" ? "typst" : "katex";
+                ui.settings.set("quiver.renderer", new_renderer);
+
+                // Rerender all labels
+                const label_rerender = () =>
+                    ui.quiver.cells.forEach(l => l.forEach(c => ui.panel.render_maths(ui, c)));
+
+                if (new_renderer === "typst") {
+                    // We need to load Typst.
+                    load_typst();
+                    Typst.then((_) => {
+                        label_rerender();
+                    });
+                } else {
+                    // KaTeX is always loaded
+                    label_rerender();
+                }
+            }
+        );
+
+        add_action(
             "About",
             [],
             () => {
@@ -6720,6 +6761,10 @@ class Toolbar {
         // Update the current zoom level underneath the "Reset zoom" button.
         this.element.query_selector('.action[data-name="Reset zoom"] .shortcut').element.innerText
             = `${Math.round(2 ** ui.scale * 100)}%`;
+        
+        // Update the current renderer setting
+        this.element.query_selector('.action[data-name="Renderer"] .shortcut').element.innerText
+            = ui.settings.get("quiver.renderer") === "katex" ? "KaTeX" : "Typst";
     }
 }
 
@@ -7106,7 +7151,8 @@ class Cell {
         // Set the label colour.
         if (this.label_colour.is_not_black()) {
             this.element.query_selector(".label").set_style({
-                color: this.label_colour.css(),
+                color: this.label_colour.css(), // This is for KaTeX rendering
+                fill: this.label_colour.css(), // This is for svg rendering, used by typst
             });
         }
 
@@ -7815,17 +7861,16 @@ class PromiseQueue {
   }
 }
 
-// TODO: add this to the big constants object
-const TYPST_PREAMBLE = "#set page(width: auto, height: auto, margin: 0em)\n#set text(28pt)\n";
 const TypstQueue = new class extends PromiseQueue {
-    render(text, template = (t) => `${TYPST_PREAMBLE}${t}`) {
+    render(text, template = (t) => `${CONSTANTS.TYPST_PREAMBLE}${t}`) {
         return this.enqueue(() => new Promise(resolve => Typst.then(typst => {
             typst.svg({mainContent: template(text)}).then(svg => resolve(svg)).catch(err => resolve(err));
         })));
     }
 };
 
-window.TypstQueue = TypstQueue
+// This will be replaced on DOMContentLoaded
+let load_typst = () => console.error('Lazy loading unimplemented');
 
 // We want until the (minimal) DOM content has loaded, so we have access to `document.body`.
 document.addEventListener("DOMContentLoaded", () => {
@@ -7940,7 +7985,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Unlike KaTeX, this is on the heavier side of things. We don't wait for it.
-    // TODO: lazy loading of this library
     Typst = new Promise((accept) => {
         typstts_script_dom.listen("load", () => {
             $typst.setCompilerInitOptions({
@@ -7953,15 +7997,22 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    // Lazy loading function for typst.ts
+    load_typst = () => {
+        document.head.appendChild(typstts_script_dom.element);
+    }
+
+    // Load immediately if Typst if the renderer set in user settings
+    if (ui.settings.get("quiver.renderer") === "typst") load_typst();
+
     // Load the style sheet needed for KaTeX.
     document.head.appendChild(new DOM.Element("link", {
         rel: "stylesheet",
         href: "KaTeX/katex.css",
     }).element);
 
-    // Load KaTeX and Typst.ts
+    // Load KaTeX
     document.head.appendChild(katex_script_dom.element);
-    document.head.appendChild(typstts_script_dom.element);
 
     // Prevent clicking on the logo from having any effect other than opening the link.
     body.query_selector("#logo-link").listen("pointerdown", (event) => {

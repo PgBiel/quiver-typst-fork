@@ -398,7 +398,10 @@ QuiverExport.fletcher = new class extends QuiverExport {
                 // We will build the arrow descriptor, which will determine tail,
                 // body, and head of the arrow.
                 let arrowdesc = "";
-                let arrow_extra_style = []
+                // Extraneous arguments to the edge() function when the style isn't implemented
+                // as an arrow descriptor. We save this list separately because these styles need
+                // to appear after the arrow descriptor no matter what.
+                let arrow_extra_style = [] 
                 switch(edge.options.style.name){
                     case "arrow":
                         // Fletcher uses arrow descriptors that are always of the form tail-body-head, 
@@ -446,10 +449,10 @@ QuiverExport.fletcher = new class extends QuiverExport {
                                 arrowdesc += "-|-";
                                 break;
                             case "none":
-                                //TODO: update this when implemented upstream
+                                //TODO: update this when implemented upstream as a shorthand
                                 // see https://github.com/Jollywatt/typst-fletcher/issues/70 for progress on this
-                                fletcher_incompatibilities.add("Empty arrow strokes are unsupported in fletcher");
                                 arrowdesc += "-";
+                                arrow_extra_style.push("extrude: ()");
                                 break;
                         }
                         // Arrow head
