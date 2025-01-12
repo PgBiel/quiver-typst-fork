@@ -4591,8 +4591,8 @@ class Panel {
                     )
                 );
 
-                let port_pane, tip, warning, error, latex_options, embed_options, note, content;
-                let textarea, parse_button, import_success;
+                let port_pane, latex_tip, typst_tip, warning, error, latex_options, embed_options, note;
+                let content, textarea, parse_button, import_success;
 
                 // Select the code for easy copying.
                 const select_output = () => {
@@ -4681,7 +4681,8 @@ class Panel {
                         this.sliders.set(`${axis}_sep`, sep_sliders[axis]);
                     }
 
-                    tip = new DOM.Element("span", { class: "tip hidden" });
+                    latex_tip = new DOM.Element("span", { class: "tip hidden tikz-cd" });
+                    typst_tip = new DOM.Element("span", { class: "tip hidden typst" });
 
                     // Create message regarding, and linking to, `quiver.sty`.
                     const update_package_previous_download = () => {
@@ -4689,17 +4690,22 @@ class Panel {
                             "package-previous-download",
                             CONSTANTS.PACKAGE_VERSION,
                         );
-                        const update = tip.query_selector(".update");
+                        const update = latex_tip.query_selector(".update");
                         if (update !== null) {
                             update.remove();
                         }
                     };
 
-                    tip.add("Remember to include ")
+                    typst_tip.add("Remember to include ")
+                        .add(new DOM.Code("fletcher"))
+                        .add(" in your Typst document with ")
+                        .add(new DOM.Code("#import \"@preview/fletcher:0.5.3\" as fletcher: diagram, node, edge"))
+                        .add_to(port_pane);
+                    latex_tip.add("Remember to include ")
                         .add(new DOM.Code("\\usepackage{quiver}"))
                         .add(" in your LaTeX preamble. You can install the package using ")
                         .add(new DOM.Link("https://tug.org/texlive/", "TeX Live 2023", true));
-                    tip.add(", or ")
+                    latex_tip.add(", or ")
                         .add(
                             // We would like to simply use `quiver.sty` here, but,
                             // unfortunately, GitHub pages does not permit overriding the
@@ -5138,7 +5144,8 @@ class Panel {
                 } else {
                     // Find the existing import/export pane.
                     port_pane = ui.element.query_selector(".port");
-                    tip = port_pane.query_selector(".tip");
+                    latex_tip = port_pane.query_selector(".tip.tikz-cd");
+                    typst_tip = port_pane.query_selector(".tip.typst");
                     warning = port_pane.query_selector("div.warning");
                     error = port_pane.query_selector("div.error");
                     latex_options = port_pane.query_selector(".options.latex");
@@ -5179,14 +5186,17 @@ class Panel {
                 hide_errors_and_warnings();
 
                 // Display a warning if necessary.
-                const unsupported_items = kind === "export" && format === "tikz-cd" ?
-                    Array.from(metadata.tikz_incompatibilities).sort() : [];
+                const unsupported_items = kind === "export"
+                        && Array.from(metadata.tikz_incompatibilities
+                            || metadata.fletcher_incompatibilities
+                            || []).sort()
+                        || [];
                 if (unsupported_items.length !== 0) {
                     warning.class_list.remove("hidden");
-                    warning.add("The exported ").add(new DOM.Code("tikz-cd"))
+                    warning.add("The exported ").add(new DOM.Code(format))
                         .add(" diagram may not match the ")
                         .add(new DOM.Element("b").add("quiver"))
-                        .add(" diagram exactly, as ").add(new DOM.Code("tikz-cd"))
+                        .add(" diagram exactly, as ").add(new DOM.Code(format))
                         .add(" does not support the following features that " +
                             "appear in this diagram:");
                     const list = new DOM.Element("ul").add_to(warning);
@@ -5237,7 +5247,8 @@ class Panel {
                 parse_button.set_attributes({ disabled: "" });
 
                 // Show/hide relevant UI elements.
-                tip.class_list.toggle("hidden", kind !== "export" || format !== "tikz-cd");
+                latex_tip.class_list.toggle("hidden", kind !== "export" || format !== "tikz-cd");
+                typst_tip.class_list.toggle("hidden", kind !== "export" || format !== "fletcher");
                 warning.class_list.toggle("hidden",
                     unsupported_items.length === 0 && dependencies.size === 0,
                 );
