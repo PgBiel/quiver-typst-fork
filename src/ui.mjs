@@ -7966,18 +7966,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // Immediately load the KaTeX library.
-   const katex_script_dom = new DOM.Element("script", {
-        type: "text/javascript",
-        src: "KaTeX/katex.min.js",
-    }).listen("error", () => {
+    // Immediately load the KaTeX library as an ES6 module.
+    KaTeX = import("/KaTeX/katex.mjs").then((module) => {
+            // KaTeX is fast enough to be worth waiting for, but not
+            // immediately available. In this case, we delay loading
+            // the quiver until the library has loaded.
+            load_quiver_from_query_string();
+        return module.default;
+    }).catch(() => {
         // Handle KaTeX not loading (somewhat) gracefully.
         UI.display_error("KaTeX failed to load.");
         // Remove the loading screen.
         ui.element.query_selector(".loading-screen").class_list.add("hidden");
     });
 
-   const typstts_script_dom = new DOM.Element("script", {
+    const typstts_script_dom = new DOM.Element("script", {
         type: "module",
         src: "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js",
     }).listen("error", () => {
@@ -7985,15 +7988,6 @@ document.addEventListener("DOMContentLoaded", () => {
         UI.display_error("Typst failed to load.");
     });
 
-    KaTeX = new Promise((accept) => {
-        katex_script_dom.listen("load", () => {
-            accept(katex);
-            // KaTeX is fast enough to be worth waiting for, but not
-            // immediately available. In this case, we delay loading
-            // the quiver until the library has loaded.
-            load_quiver_from_query_string();
-        });
-    });
 
     // Unlike KaTeX, this is on the heavier side of things. We don't wait for it.
     Typst = new Promise((accept) => {
@@ -8021,9 +8015,6 @@ document.addEventListener("DOMContentLoaded", () => {
         rel: "stylesheet",
         href: "KaTeX/katex.css",
     }).element);
-
-    // Load KaTeX
-    document.head.appendChild(katex_script_dom.element);
 
     // Prevent clicking on the logo from having any effect other than opening the link.
     body.query_selector("#logo-link").listen("pointerdown", (event) => {
