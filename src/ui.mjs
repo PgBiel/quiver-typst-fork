@@ -5606,30 +5606,32 @@ class Panel {
         };
 
         if (ui.settings.get("quiver.renderer") === "typst") {
-            // Render the label with typst
+            // Render the label with typst. then clause must got a svg(in text), not an error
             TypstQueue.render(`$${cell.label}$`).then(result => {
                 const template = document.createElement('template');
                 template.innerHTML = result;
-                // If we got an svg and not an error
-                if (template.content.firstChild.nodeName === "svg") {
-                    const svg = template.content.firstChild;
-                    // Remove extraneous style, html text, and script, which are all generated to support
-                    // text selection in the svg (which we are not interested in)
-                    svg.querySelectorAll('script, style, foreignObject').forEach(node => node.remove())
-                    // Remove the fill attribute which prevents recolouring of the svg after the fact
-                    svg.querySelectorAll('.typst-text').forEach(node => node.removeAttribute('fill'))
-                    label.element.replaceChildren(svg);
-                    // Restore bounding box
-                    const svg_dom = label.element.children[0];
-                    const bbox = svg_dom.getBBox();
-                    const viewBox = [bbox.x, bbox.y, bbox.width, bbox.height].join(" ");
-                    svg_dom.setAttribute("viewBox", viewBox);
-                    svg_dom.setAttribute("width", bbox.width);
-                    svg_dom.setAttribute("height", bbox.height);
-                } else {
-                    // the result was an error, display the text unrendered.
-                    label.element.innerHTML = cell.label;
-                }
+                const svg = template.content.firstChild;
+                // Remove extraneous html text, which are all generated to support text selection in the svg
+                // (which we are not interested in)
+                svg.querySelectorAll('foreignObject').forEach(node => node.remove())
+                // Remove the fill attribute which prevents recolouring of the svg after the fact
+                svg.querySelectorAll('.typst-text').forEach(node => node.removeAttribute('fill'))
+                label.element.replaceChildren(svg);
+                // Restore bounding box
+                const svg_dom = label.element.children[0];
+                const bbox = svg_dom.getBBox();
+                const viewBox = [bbox.x, bbox.y, bbox.width, bbox.height].join(" ");
+                svg_dom.setAttribute("viewBox", viewBox);
+                svg_dom.setAttribute("width", bbox.width);
+                svg_dom.setAttribute("height", bbox.height);
+                update_label_transformation("typst");
+            }).catch(error => {
+                // display malformed label with style `.typst-error`, like katex.
+                // this error must be handled outside of the promise queue, because some visible hint
+                // should be provided for the user.
+                const element = new DOM.Div({ class: "typst-error" });
+                element.element.innerText = cell.label;
+                label.replace(element);
                 update_label_transformation("typst");
             });
         } else {
@@ -7862,10 +7864,7 @@ class PromiseQueue {
 
   enqueue(promiseFunction) {
     // Chain the new promise onto the existing queue
-    this.queue = this.queue.then(() => promiseFunction()).catch((error) => {
-      // Handle the error inside the queue to avoid unhandled promise rejections
-      console.error("Error executing promise:", error);
-    });
+    this.queue = this.queue.then(() => promiseFunction()).catch(() => promiseFunction());
 
     // Return the current queue state
     return this.queue;
@@ -7874,9 +7873,19 @@ class PromiseQueue {
 
 const TypstQueue = new class extends PromiseQueue {
     render(text, template = (t) => `${CONSTANTS.TYPST_PREAMBLE}${t}`) {
-        return this.enqueue(() => new Promise(resolve => Typst.then(typst => {
-            typst.svg({mainContent: template(text)}).then(svg => resolve(svg)).catch(err => resolve(err));
-        })));
+        return this.enqueue(() => Typst.then(typst => {
+            return typst.svg({
+                mainContent: template(text),
+                // Remove extraneous style, and script, which are all generated to support text selection
+                // in the svg (which we are not interested in)
+                data_selection: {
+                    body: true,
+                    defs: true,
+                    css: false,
+                    js: false,
+                }
+            });
+        }));
     }
 };
 
@@ -8028,4 +8037,4 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-// vim: set ts=4 sw=4:
+// vim: set ts=4 sw=4
