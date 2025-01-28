@@ -7892,6 +7892,9 @@ const TypstQueue = new class extends PromiseQueue {
 // Load the Typst library as an ES6 module when invoked. Unlike KaTeX, this is on the heavier side of things. We don't
 // wait for it.
 const load_typst = () => {
+    if (Typst !== null) {
+        return;
+    }
     Typst = import("https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js").then((module) => {
         const $typst = module.$typst;
         const preloadRemoteFonts = module.preloadRemoteFonts;
@@ -7912,8 +7915,6 @@ const load_typst = () => {
     }).catch(() => {
         // Handle Typst.ts not loading (somewhat) gracefully.
         UI.display_error("Typst failed to load.");
-        // Remove the loading screen.
-        ui.element.query_selector(".loading-screen").class_list.add("hidden");
     });
 };
 
@@ -8015,7 +8016,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Load immediately if Typst if the renderer set in user settings
-    if (ui.settings.get("quiver.renderer") === "typst") load_typst();
+    if (ui.settings.get("quiver.renderer") === "typst"){
+        load_typst();
+        Typst.catch(() => {
+            // Remove the loading screen.
+            ui.element.query_selector(".loading-screen").class_list.add("hidden");
+        });
+    };
 
     // Load the style sheet needed for KaTeX.
     document.head.appendChild(new DOM.Element("link", {
