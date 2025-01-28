@@ -7889,8 +7889,33 @@ const TypstQueue = new class extends PromiseQueue {
     }
 };
 
-// This will be replaced on DOMContentLoaded
-let load_typst = () => console.error('Lazy loading unimplemented');
+// Load the Typst library as an ES6 module when invoked. Unlike KaTeX, this is on the heavier side of things. We don't
+// wait for it.
+const load_typst = () => {
+    Typst = import("https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js").then((module) => {
+        const $typst = module.$typst;
+        const preloadRemoteFonts = module.preloadRemoteFonts;
+        $typst.setCompilerInitOptions({
+            beforeBuild: [
+                preloadRemoteFonts([], {
+                    assets:['text' , 'cjk' , 'emoji'],
+                    assetUrlPrefix: "https://cdn.jsdelivr.net/gh/Myriad-Dreamin/typst@assets-fonts/"
+                })
+            ],
+            getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm',
+        });
+        $typst.setRendererInitOptions({
+            getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm',
+        });
+
+        return $typst;
+    }).catch(() => {
+        // Handle Typst.ts not loading (somewhat) gracefully.
+        UI.display_error("Typst failed to load.");
+        // Remove the loading screen.
+        ui.element.query_selector(".loading-screen").class_list.add("hidden");
+    });
+};
 
 // We want until the (minimal) DOM content has loaded, so we have access to `document.body`.
 document.addEventListener("DOMContentLoaded", () => {
@@ -7988,33 +8013,6 @@ document.addEventListener("DOMContentLoaded", () => {
         // Remove the loading screen.
         ui.element.query_selector(".loading-screen").class_list.add("hidden");
     });
-
-    const typstts_script_dom = new DOM.Element("script", {
-        type: "module",
-        src: "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js",
-    }).listen("error", () => {
-        // Handle Typst.ts not loading (somewhat) gracefully.
-        UI.display_error("Typst failed to load.");
-    });
-
-
-    // Unlike KaTeX, this is on the heavier side of things. We don't wait for it.
-    Typst = new Promise((accept) => {
-        typstts_script_dom.listen("load", () => {
-            $typst.setCompilerInitOptions({
-                getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm',
-            });
-            $typst.setRendererInitOptions({
-                getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm',
-            });
-            accept($typst);
-        });
-    });
-
-    // Lazy loading function for typst.ts
-    load_typst = () => {
-        document.head.appendChild(typstts_script_dom.element);
-    }
 
     // Load immediately if Typst if the renderer set in user settings
     if (ui.settings.get("quiver.renderer") === "typst") load_typst();
