@@ -1386,7 +1386,7 @@ class UI {
         // A helper function for creating a new vertex, as there are
         // several actions that can trigger the creation of a vertex.
         const create_vertex = (position) => {
-            const label = this.settings.get("quiver.renderer") === "typst" ? "bullet" : "\\bullet";
+            const label = this.settings.get("quiver.renderer") === "typst" ? "$ bullet $" : "\\bullet";
             return new Vertex(this, label, position);
         };
 
@@ -5607,7 +5607,7 @@ class Panel {
 
         if (ui.settings.get("quiver.renderer") === "typst") {
             // Render the label with typst. then clause must got a svg(in text), not an error
-            TypstQueue.render(`$${cell.label}$`).then(result => {
+            TypstQueue.render(`${cell.label}`).then(result => {
                 const template = document.createElement('template');
                 template.innerHTML = result;
                 const svg = template.content.firstChild;

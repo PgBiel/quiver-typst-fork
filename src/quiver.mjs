@@ -321,8 +321,8 @@ QuiverExport.fletcher = new class extends QuiverExport {
 
         // returns the coordinates of a cell in the form (x, y)
         const cell_to_fletcher_coords = cell => `(${cell.position.x}, ${cell.position.y})`;
-        // Wrap label text in math mode delimiters. If the label text is empty, return an empty string.
-        const label_text_to_fletcher_label = text => text === "" ? "" : `[$${text}$]`;
+        // Wrap label in a content block. If the label text is empty, return an empty string.
+        const label_text_to_fletcher_label = text => text === "" ? "" : `[${text}]`;
         // Concatenate the arguments into a string that can directly be appended to a function call,
         // ignoring empty strings. If there is no effective argument, returns the empty string.
         const arglist_to_argstring = list => {
