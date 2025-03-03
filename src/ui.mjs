@@ -7895,20 +7895,20 @@ const load_typst = () => {
     if (Typst !== null) {
         return;
     }
-    Typst = import("https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js").then((module) => {
+    Typst = import("https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.5.5-rc7/dist/esm/contrib/all-in-one-lite.bundle.js").then((module) => {
         const $typst = module.$typst;
         const preloadRemoteFonts = module.preloadRemoteFonts;
         $typst.setCompilerInitOptions({
             beforeBuild: [
                 preloadRemoteFonts([], {
                     assets:['text' , 'cjk' , 'emoji'],
-                    assetUrlPrefix: "https://cdn.jsdelivr.net/gh/Myriad-Dreamin/typst@assets-fonts/"
+                    assetUrlPrefix: "https://cdn.jsdelivr.net/gh/Myriad-Dreamin/typst@bcaa00ae845bfb13ca06501f30c70ab13894517c/" // pinned commit from assets-fonts branch
                 })
             ],
-            getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm',
+            getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.5.5-rc7/pkg/typst_ts_web_compiler_bg.wasm',
         });
         $typst.setRendererInitOptions({
-            getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm',
+            getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer@0.5.5-rc7/pkg/typst_ts_renderer_bg.wasm',
         });
 
         return $typst;
